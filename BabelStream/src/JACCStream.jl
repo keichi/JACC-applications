@@ -117,7 +117,9 @@ function copy!(data::JACCData{T}, _) where {T}
         @inbounds c[i] = a[i]
         return
     end
-    JACC.parallel_for(data.size, kernel, data.a, data.c)
+    # shmem_size=0: these kernels use no shared memory, so don't reserve the max
+    # dynamic shared memory (which would cap occupancy and cripple bandwidth).
+    JACC.parallel_for(JACC.launch_spec(shmem_size = 0), data.size, kernel, data.a, data.c)
 end
 
 function mul!(data::JACCData{T}, _) where {T}
@@ -125,7 +127,7 @@ function mul!(data::JACCData{T}, _) where {T}
         @inbounds b[i] = scalar * c[i]
         return
     end
-    JACC.parallel_for(data.size, kernel, data.b, data.c, data.scalar)
+    JACC.parallel_for(JACC.launch_spec(shmem_size = 0), data.size, kernel, data.b, data.c, data.scalar)
 end
 
 function add!(data::JACCData{T}, _) where {T}
@@ -133,7 +135,7 @@ function add!(data::JACCData{T}, _) where {T}
         @inbounds c[i] = a[i] + b[i]
         return
     end
-    JACC.parallel_for(data.size, kernel, data.a, data.b, data.c)
+    JACC.parallel_for(JACC.launch_spec(shmem_size = 0), data.size, kernel, data.a, data.b, data.c)
 end
 
 function triad!(data::JACCData{T}, _) where {T}
@@ -141,23 +143,14 @@ function triad!(data::JACCData{T}, _) where {T}
         @inbounds a[i] = b[i] + (scalar * c[i])
         return
     end
-    JACC.parallel_for(data.size, kernel, data.a, data.b,data.c, data.scalar)
+    JACC.parallel_for(JACC.launch_spec(shmem_size = 0), data.size, kernel, data.a, data.b, data.c, data.scalar)
 end
 
 function dot(data::JACCData{T}, _) where {T}
-    function kernel(i, a::AbstractArray{T}, b::AbstractArray{T}, summation::AbstractArray{T})
-        # @inbounds c[i] = a[i] * b[i]
-        @inbounds summation[i] = a[i] * b[i]
-        return
+    function kernel(i, a::AbstractArray{T}, b::AbstractArray{T})
+        @inbounds a[i] * b[i]
     end
-
-    function reduce(i, summation::AbstractArray{T})
-        summation[i]
-    end
-    summation = JACCArray{T}(undef, data.size)
-    JACC.parallel_for(data.size, kernel, data.a, data.b, summation)
-    
-    return JACC.parallel_reduce(data.size, reduce, summation)
+    return JACC.parallel_reduce(data.size, kernel, data.a, data.b; type = T)
 end
 
 function read_data(data::JACCData{T}, _)::VectorData{T} where {T}
