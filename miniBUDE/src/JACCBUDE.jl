@@ -278,7 +278,9 @@ end
     end
   end #end for kernel function
 
-  JACC.parallel_for(total_work_items, kernel) # total_work_items determines how the pose indices are calculated
+  # groupsize (wgsize) fixed to 512: best on MI300A for bm2 (9573 GFLOP/s vs 6378 with JACC auto).
+  # 512 sits right at the occupancy (register) bound; >=576 drops off sharply.
+  JACC.parallel_for(JACC.launch_spec(threads = 512), total_work_items, kernel)
   # example: if total_work_items is 25, then kernel(index) is called 25 times when doing JACC.parallel_for.
 end
 
